@@ -8,7 +8,7 @@
 services:
   audiobookshelf-strm:
     container_name: audiobookshelf-strm
-    image: ghcr.io/2222221029/audiobookshelf-strm:latest   # latest=始终最新；要锁版本可写 :2.35.1
+    image: ghcr.io/workroom2008/audiobookshelf-strm:latest   # latest=始终最新；要锁版本可写 :2.35.1
     ports:
       - "2048:80"                       # 宿主端口 2048 -> 容器内部 80；按需改左侧
     environment:
