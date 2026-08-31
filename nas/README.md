@@ -5,8 +5,8 @@
 ## 镜像地址
 
 ```
-ghcr.io/2222221029/audiobookshelf-strm:latest     # 始终是最新版
-ghcr.io/2222221029/audiobookshelf-strm:2.35.1     # 锁定具体版本
+ghcr.io/workroom2008/audiobookshelf-strm:latest     # 始终是最新版
+ghcr.io/workroom2008/audiobookshelf-strm:2.35.1     # 锁定具体版本
 ```
 
 镜像为 **linux/amd64**，仓库与镜像均公开，NAS 可直接 `docker pull`，无需登录。
