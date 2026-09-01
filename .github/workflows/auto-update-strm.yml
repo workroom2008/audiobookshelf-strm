@@ -8,7 +8,7 @@ name: Auto Update STRM from Upstream
 
 on:
   schedule:
-    - cron: '0 */2 * * *'   # 每 2 小时检查一次（公开仓库 Actions 免费，可自行调整）
+    - cron: '0 5 * * *'   # 每天 UTC 02:00 检查一次（北京时间 10:00）
   workflow_dispatch:        # 也支持在 Actions 页手动触发
 
 concurrency:
