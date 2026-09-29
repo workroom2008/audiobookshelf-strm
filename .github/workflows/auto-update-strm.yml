@@ -78,7 +78,14 @@ jobs:
           fi
 
           git checkout strm
+          BEFORE_REBASE=$(git rev-parse HEAD)
           if git rebase "$L"; then
+            # 恢复我们自己的 workflows（上游可能新增/修改 workflow 文件，GITHUB_TOKEN 无权推送会被拒）
+            # 先整目录删除清掉上游的 workflow，再从 rebase 前的提交恢复
+            rm -rf .github/workflows
+            git checkout "$BEFORE_REBASE" -- .github/workflows/
+            git add -A .github/workflows/
+            git diff --cached --quiet || git commit -m "chore: keep our workflows"
             git tag "$STRMTAG"
             git push origin strm --force-with-lease
             git push origin "$STRMTAG"
@@ -91,7 +98,7 @@ jobs:
             EXIST=$(gh issue list --state open --search "\"$L\" in:title" --json number --jq 'length')
             if [ "$EXIST" = "0" ]; then
               BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（strm 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd abs-strm\ngit fetch upstream --tags\ngit checkout strm\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin strm --force-with-lease\ngit push origin %s\n```\n推送后会自动构建并推送镜像 `%s` + `latest`。' "$L" "$L" "$STRMTAG" "$STRMTAG" "$VER")
-              gh issue create --title "⚠️ 自动更新冲突：官方 $L 需人工 rebase" --body "$BODY"
+              gh issue create --title "⚠️ 自动更新冲突：官方 $L 需人工 rebase" --body "$BODY" || echo "⚠️ 开 issue 失败（仓库可能已禁用 Issues），请人工 rebase"
             fi
           fi
 
