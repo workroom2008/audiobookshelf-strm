@@ -19,8 +19,6 @@ on:
       - server/**
       - index.js
       - package.json
-      - tsconfig.server.json
-      - Dockerfile
 
 jobs:
   build:
