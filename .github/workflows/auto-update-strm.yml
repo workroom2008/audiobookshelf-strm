@@ -16,14 +16,39 @@ concurrency:
   group: auto-update-strm
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  packages: write
-  issues: write
-
 jobs:
-  update:
+  check:
+    # 只用 API 比对 tag，不 checkout（audiobookshelf 全量 clone 很重，无新版时没必要）
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      new: ${{ steps.check.outputs.new }}
+    steps:
+      - name: 比对上游最新版本
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          L=$(gh api repos/advplyr/audiobookshelf/releases/latest --jq .tag_name)
+          echo "官方最新 release: $L"
+          echo "tag=$L" >> "$GITHUB_OUTPUT"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/strm-${L}" >/dev/null 2>&1; then
+            echo "✅ strm-${L} 已存在，无需更新"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "🎉 发现新版本 ${L}"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  update:
+    needs: check
+    if: needs.check.outputs.new == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      issues: write
     steps:
       - name: 检出 strm 分支（含完整历史）
         uses: actions/checkout@v4
@@ -41,21 +66,12 @@ jobs:
           git remote add upstream https://github.com/advplyr/audiobookshelf.git || true
           git fetch upstream --tags --force --quiet
 
-      - name: 获取官方最新发布版本
-        id: latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          L=$(gh api repos/advplyr/audiobookshelf/releases/latest --jq .tag_name)
-          echo "官方最新 release: $L"
-          echo "tag=$L" >> "$GITHUB_OUTPUT"
-
       - name: rebase 定制改动到最新版本
         id: rebase
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          L="${{ steps.latest.outputs.tag }}"     # 例如 v2.36.0
+          L="${{ needs.check.outputs.tag }}"       # 例如 v2.36.0
           STRMTAG="strm-${L}"                     # strm-v2.36.0
 
           # 该版本已打过 tag -> 跳过
