@@ -1,11 +1,11 @@
 name: Auto Update STRM from Upstream
 
 # 定时轮询官方 advplyr/audiobookshelf 的最新 release，
-# 自动把 strm 定制改动 rebase 到最新版本并打 tag。
-# 注意：自动构建已停用（GitHub 账户额度超额），本流程不再触发镜像构建。
-# - 无新版本：什么都不做。
-# - 有新版本且无冲突：自动更新 strm 分支 + 打 strm-vX.Y.Z tag（不构建镜像）。
+# 自动把 strm 定制改动 rebase 到最新版本并打 tag，然后自动构建镜像。
+# - 无新版本：只补构建（若该版本镜像没构建过）。
+# - 有新版本且无冲突：自动更新 strm 分支 + 打 strm-vX.Y.Z tag + 触发镜像构建。
 # - 有冲突：中止、不破坏代码，并自动开 issue 提醒你人工 rebase 一次。
+# 构建标记 built-X.Y.Z 由 build-strm-image.yml 构建成功后打，失败次日自动重试。
 
 on:
   schedule:
@@ -25,6 +25,7 @@ jobs:
     outputs:
       tag: ${{ steps.check.outputs.tag }}
       new: ${{ steps.check.outputs.new }}
+      build: ${{ steps.check.outputs.build }}
     steps:
       - name: 比对上游最新版本
         id: check
@@ -40,6 +41,14 @@ jobs:
           else
             echo "🎉 发现新版本 ${L}"
             echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+          V="${L#v}"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/built-${V}" >/dev/null 2>&1; then
+            echo "✅ ${V} 镜像已构建过"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "🆕 ${V} 镜像未构建，将触发构建"
+            echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
   update:
@@ -128,7 +137,24 @@ jobs:
             # 同版本若已有未关闭的 issue 则不重复创建
             EXIST=$(gh issue list --state open --search "\"$L\" in:title" --json number --jq 'length')
             if [ "$EXIST" = "0" ]; then
-              BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（strm 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd abs-strm\ngit fetch upstream --tags\ngit checkout strm\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin strm --force-with-lease\ngit push origin %s\n```\n注意：自动构建已停用，推送后不会自动构建镜像，需要时手动跑 `build-strm-image.yml`。' "$L" "$L" "$STRMTAG" "$STRMTAG")
+              BODY=$(printf '自动把 strm 定制改动 rebase 到官方 `%s` 时发生**冲突**，已自动中止（strm 分支未被改动，镜像不受影响）。\n\n请在本地解决一次冲突：\n```bash\ncd abs-strm\ngit fetch upstream --tags\ngit checkout strm\ngit rebase %s\n# 手动解决冲突后：\ngit add <冲突文件>\ngit rebase --continue\ngit tag %s\ngit push origin strm --force-with-lease\ngit push origin %s\n```\n推完后次日的定时任务会自动补构建镜像（也可手动跑 `build-strm-image.yml`）。' "$L" "$L" "$STRMTAG" "$STRMTAG")
               gh issue create --title "⚠️ 自动更新冲突：官方 $L 需人工 rebase" --body "$BODY" || echo "⚠️ 开 issue 失败（仓库可能已禁用 Issues），请人工 rebase"
             fi
           fi
+
+  build:
+    needs: [check, update]
+    # rebase 冲突（update 失败）时不动镜像；构建失败则次日重试
+    if: |
+      always() && needs.check.outputs.build == 'true'
+      && needs.update.result != 'failure' && needs.update.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: 触发镜像构建
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ needs.check.outputs.tag }}"
+          gh workflow run build-strm-image.yml --repo "$GITHUB_REPOSITORY" --ref strm -f tag="${V#v}"
